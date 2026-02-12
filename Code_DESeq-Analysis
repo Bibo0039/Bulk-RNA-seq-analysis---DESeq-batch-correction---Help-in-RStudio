@@ -1,0 +1,36 @@
+all(rownames(metadata) == colnames(counts)) #TRUE
+
+## Build dataset with treatment-specific design 
+dds_1 <- DESeqDataSetFromMatrix(
+  countData = counts,
+  colData   = metadata,
+  design    = ~ treatment1)
+# Prefilter
+keep_1 <- rowSums(counts(dds_1)) >= 10
+dds_1 <- dds_1[keep_1, ]
+
+#normalization for sva + filter even stricter
+dds_1 <- estimateSizeFactors(dds_1)
+norm_counts_1 <- counts(dds_1, normalized = TRUE)
+keep_1_sva <- rowMeans(norm_counts_1) > 1
+norm_counts_1  <- norm_counts_1[keep_1_sva, ]
+
+#sva
+# full model: includes the biological variable of interest
+mod_1  <- model.matrix(~ treatment1, data = as.data.frame(colData(dds_1)))
+# null model: without the variable of interest
+mod0_1 <- model.matrix(~ 1, data = as.data.frame(colData(dds_1)))
+
+#svaseq to estimate surrogate variables
+svseq <- sva(norm_counts_1, mod_1, mod0_1)  
+## proposes 499 variables?
+
+for(i in 1:4) {
+  colData(dds_1)[[paste0("SV", i)]] <- svseq$sv[, i]}
+#update design to include SVs as covariates
+dds_1_sva <- dds_1
+design(dds_1_sva) <- ~ SV1 + SV2 + SV3 + SV4 + treatment1
+
+# Run DESeq, Estimate size factors and dispersion
+dds_1_sva <- DESeq(dds_1_sva)
+dds_1_sva
